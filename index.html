@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Himal's Touchpad Mouse</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%; width: 100%;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+
+    #touchpad {
+      width: 100%;
+      height: calc(100% - 160px); /* leave space for log */
+      background-color: #f2f2f2;
+      touch-action: none; /* prevents scrolling */
+      cursor: none;
+    }
+
+    #log {
+      background: #111;
+      color: #0f0;
+      padding: 10px;
+      height: 160px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="touchpad"></div>
+<div id="log">📜 Log:\n</div>
+
+<script>
+  const log = msg => {
+    const el = document.getElementById("log");
+    el.textContent += msg + "\n";
+    el.scrollTop = el.scrollHeight;
+  };
+
+  const options = {
+    clean: true,
+    connectTimeout: 4000,
+    clientId: 'WebClient_' + Math.random().toString(16).substr(2, 8),
+    username: 'WebClient',
+    password: 'mnG=g85#g%94',
+  };
+
+  const connectUrl = 'wss://37dddb13e72947918e4d9af67c714674.s1.eu.hivemq.cloud:8884/mqtt';
+  const topic = 'himalsmouse/control';
+  const client = mqtt.connect(connectUrl, options);
+
+  client.on('connect', () => {
+    log('✅ Connected to MQTT broker');
+    client.subscribe(topic, err => {
+      if (!err) log('📥 Subscribed to topic: ' + topic);
+    });
+  });
+
+  client.on('error', err => log('❌ ' + err.message));
+  client.on('reconnect', () => log('🔄 Reconnecting...'));
+  client.on('message', (t, msg) => log(`📨 ${t}: ${msg}`));
+
+  const sendDelta = (dx, dy) => {
+    const payload = JSON.stringify({ move: { dx, dy } });
+    client.publish(topic, payload);
+    log(`🖱️ Moved: dx=${dx}, dy=${dy}`);
+  };
+
+  let lastX = null, lastY = null;
+  const reset = () => { lastX = lastY = null; };
+
+  const handleMove = (x, y) => {
+    if (lastX !== null && lastY !== null) {
+      const dx = x - lastX;
+      const dy = y - lastY;
+
+      // Threshold to avoid jitter
+      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+        sendDelta(dx, dy);
+      }
+    }
+    lastX = x;
+    lastY = y;
+  };
+
+  const tp = document.getElementById("touchpad");
+
+  // Touch support
+  tp.addEventListener("touchstart", e => {
+    const t = e.touches[0];
+    reset();
+    handleMove(t.clientX, t.clientY);
+  }, { passive: false });
+
+  tp.addEventListener("touchmove", e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    handleMove(t.clientX, t.clientY);
+  }, { passive: false });
+
+  tp.addEventListener("touchend", reset);
+  tp.addEventListener("touchcancel", reset);
+
+  // Mouse support
+  let mouseDown = false;
+
+  tp.addEventListener("mousedown", e => {
+    mouseDown = true;
+    reset();
+    handleMove(e.clientX, e.clientY);
+  });
+
+  tp.addEventListener("mousemove", e => {
+    if (!mouseDown) return;
+    handleMove(e.clientX, e.clientY);
+  });
+
+  tp.addEventListener("mouseup", () => { mouseDown = false; reset(); });
+  tp.addEventListener("mouseleave", () => { mouseDown = false; reset(); });
+</script>
+
+</body>
+</html>
