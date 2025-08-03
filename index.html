@@ -78,6 +78,12 @@
     log(`🖱️ Moved: dx=${dx}, dy=${dy}`);
   };
 
+  const sendClick = (type, hold) => {
+    const payload = JSON.stringify({ dir: type, hold });
+    client.publish(topic, payload);
+    log(`👆 ${type} ${hold ? "PRESS" : "RELEASE"}`);
+  };
+
   let lastX = null, lastY = null;
   const reset = () => { lastX = lastY = null; };
 
@@ -93,25 +99,57 @@
 
   const tp = document.getElementById("touchpad");
 
-  // Touch support
+  // Gesture Tap Detection
+  let touchStartTime = 0;
+  let touchTimeout = null;
+  let moved = false;
+
   tp.addEventListener("touchstart", e => {
-    const t = e.touches[0];
+    touchStartTime = Date.now();
+    moved = false;
     reset();
-    handleMove(t.clientX, t.clientY);
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      handleMove(t.clientX, t.clientY);
+    }
   }, { passive: false });
 
   tp.addEventListener("touchmove", e => {
     e.preventDefault();
-    const t = e.touches[0];
-    handleMove(t.clientX, t.clientY);
+    moved = true;
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      handleMove(t.clientX, t.clientY);
+    }
   }, { passive: false });
 
-  tp.addEventListener("touchend", reset);
+  tp.addEventListener("touchend", e => {
+    const duration = Date.now() - touchStartTime;
+    const fingers = e.touches.length;
+
+    if (!moved && duration < 300) {
+      if (e.changedTouches.length === 1) {
+        if (e.changedTouches[0].radiusX < 30) {
+          // Single Tap → Left Click
+          sendClick("CLICK", true);
+          setTimeout(() => sendClick("CLICK", false), 100);
+        }
+      }
+
+      if (e.changedTouches.length === 2 || e.touches.length === 1) {
+        // Two Finger Tap → Right Click
+        sendClick("RCLICK", true);
+        setTimeout(() => sendClick("RCLICK", false), 100);
+      }
+    }
+
+    reset();
+  });
+
   tp.addEventListener("touchcancel", reset);
 
   // Mouse support
   let mouseDown = false;
-
   tp.addEventListener("mousedown", e => {
     mouseDown = true;
     reset();
@@ -123,8 +161,15 @@
     handleMove(e.clientX, e.clientY);
   });
 
-  tp.addEventListener("mouseup", () => { mouseDown = false; reset(); });
-  tp.addEventListener("mouseleave", () => { mouseDown = false; reset(); });
+  tp.addEventListener("mouseup", () => {
+    mouseDown = false;
+    reset();
+  });
+
+  tp.addEventListener("mouseleave", () => {
+    mouseDown = false;
+    reset();
+  });
 </script>
 
 </body>
