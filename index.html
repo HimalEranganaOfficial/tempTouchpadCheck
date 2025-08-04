@@ -17,12 +17,14 @@
       display: flex;
       flex-direction: column;
     }
+
     #touchpad {
       flex: 1;
       width: 100%;
       touch-action: none;
       cursor: none;
     }
+
     #log {
       background: #111;
       color: #0f0;
@@ -82,25 +84,8 @@
     log(`👆 ${type} ${hold ? "PRESS" : "RELEASE"}`);
   };
 
-  const sendZoom = direction => {
-    const payload = JSON.stringify({ zoom: direction });
-    client.publish(topic, payload);
-    log(`🔍 Zoom: ${direction}`);
-  };
-
-  const tp = document.getElementById("touchpad");
-
   let lastX = null, lastY = null;
-  let lastTwoX = null, lastTwoY = null;
-  let lastDistance = null;
-  let touchStartTime = 0;
-  let moved = false;
-
-  const reset = () => {
-    lastX = lastY = null;
-    lastTwoX = lastTwoY = null;
-    lastDistance = null;
-  };
+  const reset = () => { lastX = lastY = null; };
 
   const handleMove = (x, y) => {
     if (lastX !== null && lastY !== null) {
@@ -112,74 +97,50 @@
     lastY = y;
   };
 
-  const handleTwoFingerScroll = (x, y) => {
-    if (lastTwoX !== null && lastTwoY !== null) {
-      const dx = x - lastTwoX;
-      const dy = y - lastTwoY;
-      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-        sendDelta(dx, dy);
-        log(`🧤 Two-finger scroll → dx=${dx}, dy=${dy}`);
-      }
-    }
-    lastTwoX = x;
-    lastTwoY = y;
-  };
+  const tp = document.getElementById("touchpad");
+
+  // Gesture Tap Detection
+  let touchStartTime = 0;
+  let touchTimeout = null;
+  let moved = false;
 
   tp.addEventListener("touchstart", e => {
     touchStartTime = Date.now();
     moved = false;
     reset();
-
     if (e.touches.length === 1) {
-      handleMove(e.touches[0].clientX, e.touches[0].clientY);
-    } else if (e.touches.length === 2) {
-      const x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      handleTwoFingerScroll(x, y);
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastDistance = Math.sqrt(dx * dx + dy * dy);
+      const t = e.touches[0];
+      handleMove(t.clientX, t.clientY);
     }
   }, { passive: false });
 
   tp.addEventListener("touchmove", e => {
     e.preventDefault();
     moved = true;
-
     if (e.touches.length === 1) {
-      handleMove(e.touches[0].clientX, e.touches[0].clientY);
-    } else if (e.touches.length === 2) {
-      const x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      handleTwoFingerScroll(x, y);
-
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const newDistance = Math.sqrt(dx * dx + dy * dy);
-
-      if (lastDistance !== null) {
-        const diff = newDistance - lastDistance;
-        if (Math.abs(diff) > 10) {
-          if (diff > 0) sendZoom("in");
-          else sendZoom("out");
-          lastDistance = newDistance;
-        }
-      } else {
-        lastDistance = newDistance;
-      }
+      const t = e.touches[0];
+      handleMove(t.clientX, t.clientY);
     }
   }, { passive: false });
 
   tp.addEventListener("touchend", e => {
     const duration = Date.now() - touchStartTime;
-    const fingerCount = e.changedTouches.length;
+    const fingers = e.touches.length;
 
-    if (!moved && duration < 250 && fingerCount === 2) {
-      sendClick("RCLICK", true);
-      setTimeout(() => sendClick("RCLICK", false), 100);
-    } else if (!moved && duration < 250 && fingerCount === 1) {
-      sendClick("CLICK", true);
-      setTimeout(() => sendClick("CLICK", false), 100);
+    if (!moved && duration < 300) {
+      if (e.changedTouches.length === 1) {
+        if (e.changedTouches[0].radiusX < 30) {
+          // Single Tap → Left Click
+          sendClick("CLICK", true);
+          setTimeout(() => sendClick("CLICK", false), 100);
+        }
+      }
+
+      if (e.changedTouches.length === 2 || e.touches.length === 1) {
+        // Two Finger Tap → Right Click
+        sendClick("RCLICK", true);
+        setTimeout(() => sendClick("RCLICK", false), 100);
+      }
     }
 
     reset();
@@ -187,6 +148,7 @@
 
   tp.addEventListener("touchcancel", reset);
 
+  // Mouse support
   let mouseDown = false;
   tp.addEventListener("mousedown", e => {
     mouseDown = true;
